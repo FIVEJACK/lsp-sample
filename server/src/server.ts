@@ -134,48 +134,50 @@ documents.onDidChangeContent(change => {
 	validateTextDocument(change.document);
 });
 
+const checkEnv = (text: string, diagnostics: Diagnostic[], settings: ExampleSettings) => {	
+	let problems = 0;
+	const bodyText = text.match(/^\n|\S+/gm) || ['']; // Split lines by array
+	for (let idx = 0; idx < bodyText.length; idx++ ) {
+		if(problems >= settings.maxNumberOfProblems ) { break; }
+
+		const checkText = bodyText[idx].split('=');
+		// Check if env name is an uppercase
+		if(checkText[0] && checkText[0] !== checkText[0].toUpperCase()) {
+			problems++;				
+			const diagnostic: Diagnostic = {
+				severity: DiagnosticSeverity.Warning,
+				range: {
+					start: { line: idx, character: 0 },
+					end : { line: idx, character : checkText[0].length }
+				},
+				message: `${checkText[0]} needs to be an uppercase as an ENV name.`
+			};
+			diagnostics.push(diagnostic);
+		}
+		
+		// Check if ENV line has a value
+		if(checkText.length < 2) {
+			problems++;				
+			const diagnostic: Diagnostic = {
+				severity: DiagnosticSeverity.Error,
+				range: {
+					start: { line: idx, character: 0 },
+					end : { line: idx, character : bodyText[idx].length }
+				},
+				message: `${checkText[0]} does not have a value. ENV needs a value separated by '='`
+			};
+			diagnostics.push(diagnostic);
+		}
+	}
+
+	return diagnostics;
+};
+
 async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 	// In this simple example we get the settings for every validate run.
 	const settings = await getDocumentSettings(textDocument.uri);
-
-	// The validator creates diagnostics for all uppercase words length 2 and more
 	const text = textDocument.getText();
-	const pattern = /\b[A-Z]{2,}\b/g;
-	let m: RegExpExecArray | null;
-
-	let problems = 0;
-	const diagnostics: Diagnostic[] = [];
-	while ((m = pattern.exec(text)) && problems < settings.maxNumberOfProblems) {
-		problems++;
-		const diagnostic: Diagnostic = {
-			severity: DiagnosticSeverity.Warning,
-			range: {
-				start: textDocument.positionAt(m.index),
-				end: textDocument.positionAt(m.index + m[0].length)
-			},
-			message: `${m[0]} is all uppercase.`,
-			source: 'ex'
-		};
-		if (hasDiagnosticRelatedInformationCapability) {
-			diagnostic.relatedInformation = [
-				{
-					location: {
-						uri: textDocument.uri,
-						range: Object.assign({}, diagnostic.range)
-					},
-					message: 'Spelling matters'
-				},
-				{
-					location: {
-						uri: textDocument.uri,
-						range: Object.assign({}, diagnostic.range)
-					},
-					message: 'Particularly for names'
-				}
-			];
-		}
-		diagnostics.push(diagnostic);
-	}
+	const diagnostics = checkEnv(text, [], settings);
 
 	// Send the computed diagnostics to VSCode.
 	connection.sendDiagnostics({ uri: textDocument.uri, diagnostics });
@@ -194,14 +196,19 @@ connection.onCompletion(
 		// info and always provide the same completion items.
 		return [
 			{
-				label: 'TypeScript',
+				label: 'ENV',
 				kind: CompletionItemKind.Text,
 				data: 1
 			},
 			{
-				label: 'JavaScript',
+				label: 'PORT',
 				kind: CompletionItemKind.Text,
 				data: 2
+			},
+			{
+				label: 'DESCRIPTION',
+				kind: CompletionItemKind.Text,
+				data: 3
 			}
 		];
 	}
@@ -212,11 +219,14 @@ connection.onCompletion(
 connection.onCompletionResolve(
 	(item: CompletionItem): CompletionItem => {
 		if (item.data === 1) {
-			item.detail = 'TypeScript details';
-			item.documentation = 'TypeScript documentation';
+			item.detail = 'ENV details';
+			item.documentation = 'The environment where the apps lived';
 		} else if (item.data === 2) {
-			item.detail = 'JavaScript details';
-			item.documentation = 'JavaScript documentation';
+			item.detail = 'PORT details';
+			item.documentation = 'The port where the apps will be served';
+		} else if (item.data === 3) {
+			item.detail = 'DESCRIPTION details';
+			item.documentation = 'The description where the apps will be served';
 		}
 		return item;
 	}
